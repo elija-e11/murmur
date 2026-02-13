@@ -1,12 +1,27 @@
 """Reddit social data source — tracks mention volume, upvotes, and sentiment in crypto subreddits."""
 
 import logging
-import re
 import time
 
 import praw
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 logger = logging.getLogger(__name__)
+
+_vader = SentimentIntensityAnalyzer()
+
+# Add crypto-specific lexicon entries (VADER doesn't know these)
+_CRYPTO_LEXICON = {
+    "bull": 1.5, "bullish": 2.0, "moon": 2.0, "mooning": 2.5,
+    "pump": 1.0, "hodl": 1.0, "accumulate": 1.0, "breakout": 1.5,
+    "undervalued": 1.5, "gem": 1.5, "rocket": 2.0, "rally": 1.5,
+    "surge": 1.5, "adoption": 1.0,
+    "bear": -1.5, "bearish": -2.0, "dump": -1.5, "crash": -2.5,
+    "scam": -2.5, "rug": -3.0, "rugpull": -3.0, "rekt": -2.0,
+    "plunge": -2.0, "tank": -2.0, "bubble": -1.5, "ponzi": -3.0,
+    "fud": -1.0,
+}
+_vader.lexicon.update(_CRYPTO_LEXICON)
 
 # Subreddits to scan (mix of general + coin-specific)
 DEFAULT_SUBREDDITS = [
@@ -18,20 +33,6 @@ DEFAULT_SUBREDDITS = [
     "avalanche",
     "chainlink",
 ]
-
-# Simple keyword sentiment — fast and dependency-free
-BULLISH_WORDS = {
-    "bull", "bullish", "moon", "mooning", "pump", "buy", "buying", "long",
-    "breakout", "undervalued", "accumulate", "dip", "hodl", "hold",
-    "rocket", "gem", "potential", "promising", "adoption", "green",
-    "rally", "surge", "soar", "explode", "massive", "huge",
-}
-
-BEARISH_WORDS = {
-    "bear", "bearish", "dump", "sell", "selling", "short", "crash",
-    "overvalued", "bubble", "scam", "rug", "rugpull", "dead", "rekt",
-    "red", "plunge", "tank", "collapse", "fear", "panic", "exit",
-}
 
 # Map coin symbols to search terms
 SYMBOL_SEARCH_TERMS = {
@@ -47,17 +48,11 @@ SYMBOL_SEARCH_TERMS = {
 
 
 def _keyword_sentiment(text: str) -> float:
-    """Simple keyword-based sentiment score.
+    """VADER-based sentiment score with crypto-specific lexicon.
 
     Returns float from -1 (very bearish) to +1 (very bullish), 0 = neutral.
     """
-    words = set(re.findall(r'[a-z]+', text.lower()))
-    bullish = len(words & BULLISH_WORDS)
-    bearish = len(words & BEARISH_WORDS)
-    total = bullish + bearish
-    if total == 0:
-        return 0
-    return (bullish - bearish) / total
+    return _vader.polarity_scores(text)["compound"]
 
 
 class RedditSource:

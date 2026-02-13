@@ -28,7 +28,7 @@ class TestKeywordSentiment:
         assert _keyword_sentiment("crash imminent, sell everything, this is a scam") < 0
 
     def test_neutral_text(self):
-        assert _keyword_sentiment("the weather is nice today") == 0
+        assert abs(_keyword_sentiment("the market opened at 9am")) < 0.1
 
     def test_mixed_text(self):
         score = _keyword_sentiment("could pump or could crash, hard to tell")
