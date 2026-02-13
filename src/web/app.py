@@ -19,12 +19,20 @@ app.mount("/static", StaticFiles(directory=_WEB_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
 
 
+@app.get("/health")
+async def health():
+    return PlainTextResponse("ok")
+
+
 @app.middleware("http")
 async def ip_whitelist(request: Request, call_next):
     """Block requests from IPs not in ALLOWED_IPS (comma-separated).
 
     If ALLOWED_IPS is not set, all IPs are allowed.
+    Healthcheck endpoint is always allowed.
     """
+    if request.url.path == "/health":
+        return await call_next(request)
     allowed = os.getenv("ALLOWED_IPS", "")
     if allowed:
         allowed_set = {ip.strip() for ip in allowed.split(",")}
