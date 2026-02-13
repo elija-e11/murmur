@@ -14,6 +14,8 @@ class LiveTrader:
 
     def __init__(self, db: Database, config: dict, api_key: str = "", api_secret: str = "", key_file: str = ""):
         self.client = create_coinbase_client(api_key, api_secret, key_file)
+        if not self.client:
+            raise ValueError("Coinbase credentials required for live trading")
         self.db = db
 
         risk = config.get("risk", {})

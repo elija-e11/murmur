@@ -167,25 +167,13 @@ class Murmur:
         if decisions:
             self.dashboard.print_signal_summary(decisions)
 
-    def run(self, web: bool = False, web_port: int = 8877):
-        """Start the bot with scheduled tasks."""
-        logger.info("Starting Murmur...")
-        logger.info(f"Mode: {self.config.get('execution', {}).get('mode', 'paper')}")
-        logger.info(f"Watchlist: {', '.join(self.watchlist)}")
-
-        self._running = True
-
-        # Start web dashboard first so healthchecks pass during data fetch
-        if web:
-            self._start_web_server(web_port)
-
-        # Initial data fetch
+    def _start_scheduler(self):
+        """Start the bot scheduler with initial fetch + recurring tasks."""
         logger.info("Fetching initial data...")
         self.fetch_market_data()
         self.fetch_social_data()
         self.run_analysis_cycle()
 
-        # Schedule recurring tasks
         intervals = self.config.get("intervals", {})
         self.scheduler.add_job(
             self.fetch_market_data, "interval",
@@ -202,27 +190,34 @@ class Murmur:
             seconds=intervals.get("analysis_cycle", 300),
             id="analysis",
         )
-
         self.scheduler.start()
+        logger.info("Scheduler started.")
 
-        logger.info("Scheduler started. Press Ctrl+C to stop.")
+    def run(self, web: bool = False, web_port: int = 8877):
+        """Start the bot with scheduled tasks."""
+        logger.info("Starting Murmur...")
+        logger.info(f"Mode: {self.config.get('execution', {}).get('mode', 'paper')}")
+        logger.info(f"Watchlist: {', '.join(self.watchlist)}")
 
-        # Keep main thread alive
-        try:
-            while self._running:
-                import time
-                time.sleep(1)
-        except KeyboardInterrupt:
-            self.stop()
+        self._running = True
 
-    def _start_web_server(self, port: int):
-        """Launch the web dashboard in a background thread."""
-        web_app = create_app()
-        config = uvicorn.Config(web_app, host="0.0.0.0", port=port, log_level="warning")
-        server = uvicorn.Server(config)
-        thread = threading.Thread(target=server.run, daemon=True)
-        thread.start()
-        logger.info(f"Web dashboard running at http://localhost:{port}")
+        if web:
+            # Run scheduler in background, uvicorn in foreground (for Railway healthcheck)
+            bot_thread = threading.Thread(target=self._start_scheduler, daemon=True)
+            bot_thread.start()
+
+            logger.info(f"Web dashboard starting on port {web_port}")
+            web_app = create_app()
+            uvicorn.run(web_app, host="0.0.0.0", port=web_port, log_level="info")
+        else:
+            # No web — run scheduler in foreground
+            self._start_scheduler()
+            try:
+                while self._running:
+                    import time
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                self.stop()
 
     def stop(self):
         """Gracefully shut down."""

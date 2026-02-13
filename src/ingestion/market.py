@@ -37,19 +37,25 @@ TIMEFRAME_SECONDS = {
 
 
 def create_coinbase_client(api_key: str = "", api_secret: str = "",
-                           key_file: str = "") -> RESTClient:
+                           key_file: str = "") -> RESTClient | None:
     """Create a Coinbase RESTClient using key_file or api_key+api_secret.
 
     Prefers key_file (CDP JSON with ECDSA P-256 PEM key) when available.
     The key file must have {"name": "...", "privateKey": "-----BEGIN EC PRIVATE KEY-----..."}.
     Generate ECDSA keys at https://portal.cdp.coinbase.com (select ECDSA, not Ed25519).
+    Returns None if no credentials are available.
     """
-    if key_file and Path(key_file).exists():
-        return RESTClient(key_file=key_file)
-    elif api_key and api_secret:
-        return RESTClient(api_key=api_key, api_secret=api_secret)
-    else:
-        raise ValueError("Provide either key_file or api_key + api_secret")
+    try:
+        if key_file and Path(key_file).exists():
+            return RESTClient(key_file=key_file)
+        elif api_key and api_secret:
+            return RESTClient(api_key=api_key, api_secret=api_secret)
+        else:
+            logger.warning("No Coinbase credentials configured — market data unavailable")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to create Coinbase client: {e}")
+        return None
 
 
 class MarketDataClient:
@@ -60,6 +66,8 @@ class MarketDataClient:
 
     def get_accounts(self) -> list[dict]:
         """Fetch all accounts with balances."""
+        if not self.client:
+            return []
         resp = self.client.get_accounts()
         accounts = []
         for acct in resp.accounts or []:
@@ -74,6 +82,8 @@ class MarketDataClient:
 
     def get_product(self, product_id: str) -> dict:
         """Get current product ticker info."""
+        if not self.client:
+            return {"product_id": product_id, "price": 0, "bid": 0, "volume_24h": 0}
         resp = self.client.get_product(product_id)
         return {
             "product_id": product_id,
@@ -89,6 +99,8 @@ class MarketDataClient:
         Returns list of dicts with keys: timestamp, open, high, low, close, volume
         sorted ascending by timestamp.
         """
+        if not self.client:
+            return []
         granularity = TIMEFRAME_MAP.get(timeframe)
         if not granularity:
             # For 4h, fetch 1h candles and aggregate
