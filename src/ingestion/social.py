@@ -174,7 +174,7 @@ class SocialAggregator:
             result = cg.get_coin_data(symbol)
             price = result.get("price")
             score = result.get("community_score")
-            summary = f"${price:,.0f}" if price else "no price"
+            summary = f"{symbol} ${price:,.0f}" if price else f"{symbol} no price"
             if score:
                 summary += f", community {score:.0f}"
             _record_success("coingecko", summary)

@@ -49,21 +49,14 @@ class BlueskySource:
         if since:
             params["since"] = since
 
-        try:
-            url = f"{self.BASE_URL}/xrpc/app.bsky.feed.searchPosts"
-            resp = self.session.get(url, params=params, timeout=15)
-            self._last_request = time.time()
-            resp.raise_for_status()
-            return resp.json().get("posts", [])
-        except requests.exceptions.HTTPError as e:
-            if resp.status_code == 429:
-                logger.warning("Bluesky rate limited, backing off 10s")
-                time.sleep(10)
-            logger.error(f"Bluesky search error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Bluesky request failed: {e}")
-            return []
+        url = f"{self.BASE_URL}/xrpc/app.bsky.feed.searchPosts"
+        resp = self.session.get(url, params=params, timeout=15)
+        self._last_request = time.time()
+        if resp.status_code == 429:
+            logger.warning("Bluesky rate limited, backing off 10s")
+            time.sleep(10)
+        resp.raise_for_status()
+        return resp.json().get("posts", [])
 
     def get_asset_metrics(self, symbol: str, lookback_hours: int = 4) -> dict:
         """Get mention count, sentiment, and engagement for a symbol.
@@ -87,6 +80,7 @@ class BlueskySource:
         total_likes = 0
         total_reposts = 0
         total_replies = 0
+        api_errors = []
 
         for term in search_terms:
             try:
@@ -116,6 +110,11 @@ class BlueskySource:
 
             except Exception as e:
                 logger.error(f"Bluesky fetch failed for term '{term}': {e}")
+                api_errors.append(e)
+
+        # If every search term failed, propagate so health tracker sees the error
+        if api_errors and len(api_errors) == len(search_terms):
+            raise api_errors[0]
 
         mention_count = len(seen_uris)
         avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
