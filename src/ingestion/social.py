@@ -90,10 +90,13 @@ class SocialAggregator:
         else:
             logger.info("Reddit source skipped (no credentials)")
 
-        # Bluesky — always available (no auth needed, public AT Protocol API)
+        # Bluesky — uses authenticated API when credentials provided, public API otherwise
         try:
             from src.ingestion.sources.bluesky import BlueskySource
-            self.sources_available["bluesky"] = BlueskySource()
+            self.sources_available["bluesky"] = BlueskySource(
+                handle=secrets.get("bluesky_handle", ""),
+                app_password=secrets.get("bluesky_app_password", ""),
+            )
             logger.info("Bluesky source initialized")
         except Exception as e:
             logger.warning(f"Bluesky source failed to init: {e}")

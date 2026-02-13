@@ -31,6 +31,8 @@ def load_config(config_path: str | None = None) -> dict:
         "reddit_client_id": os.getenv("REDDIT_CLIENT_ID", ""),
         "reddit_client_secret": os.getenv("REDDIT_CLIENT_SECRET", ""),
         "reddit_user_agent": os.getenv("REDDIT_USER_AGENT", "murmur-bot/1.0"),
+        "bluesky_handle": os.getenv("BLUESKY_HANDLE", ""),
+        "bluesky_app_password": os.getenv("BLUESKY_APP_PASSWORD", ""),
         "cryptopanic_api_key": os.getenv("CRYPTOPANIC_API_KEY", ""),
         "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),

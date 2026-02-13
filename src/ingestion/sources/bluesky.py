@@ -1,4 +1,8 @@
-"""Bluesky social data source — searches public posts via the AT Protocol API."""
+"""Bluesky social data source — searches posts via the AT Protocol API.
+
+Uses authenticated access through bsky.social when credentials are provided,
+falling back to the public API (which may be blocked from cloud IPs).
+"""
 
 import logging
 import time
@@ -24,18 +28,64 @@ SYMBOL_SEARCH_TERMS = {
 
 
 class BlueskySource:
-    """Fetches crypto sentiment from Bluesky public post search."""
+    """Fetches crypto sentiment from Bluesky post search."""
 
-    BASE_URL = "https://public.api.bsky.app"
+    PDS_URL = "https://bsky.social"
+    PUBLIC_URL = "https://public.api.bsky.app"
 
-    def __init__(self):
+    def __init__(self, handle: str = "", app_password: str = ""):
         self.session = requests.Session()
         self._last_request = 0
         self._min_interval = 0.5  # Be polite with rate limits
 
+        self._handle = handle
+        self._app_password = app_password
+        self._access_jwt = None
+        self._refresh_jwt = None
+
+        if handle and app_password:
+            self._base_url = self.PDS_URL
+            self._authenticate()
+        else:
+            self._base_url = self.PUBLIC_URL
+            logger.info("Bluesky using public API (no credentials)")
+
+    def _authenticate(self):
+        """Create a session with Bluesky using handle + app password."""
+        resp = requests.post(
+            f"{self.PDS_URL}/xrpc/com.atproto.server.createSession",
+            json={"identifier": self._handle, "password": self._app_password},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._access_jwt = data["accessJwt"]
+        self._refresh_jwt = data["refreshJwt"]
+        self.session.headers["Authorization"] = f"Bearer {self._access_jwt}"
+        logger.info(f"Bluesky authenticated as {data.get('handle', self._handle)}")
+
+    def _refresh_session(self):
+        """Refresh an expired access token using the refresh token."""
+        resp = requests.post(
+            f"{self.PDS_URL}/xrpc/com.atproto.server.refreshSession",
+            headers={"Authorization": f"Bearer {self._refresh_jwt}"},
+            timeout=15,
+        )
+        if resp.status_code == 401:
+            # Refresh token also expired — full re-auth
+            logger.warning("Bluesky refresh token expired, re-authenticating")
+            self._authenticate()
+            return
+        resp.raise_for_status()
+        data = resp.json()
+        self._access_jwt = data["accessJwt"]
+        self._refresh_jwt = data["refreshJwt"]
+        self.session.headers["Authorization"] = f"Bearer {self._access_jwt}"
+        logger.debug("Bluesky session refreshed")
+
     def _search_posts(self, query: str, limit: int = 100,
                       since: str | None = None) -> list[dict]:
-        """Search public Bluesky posts."""
+        """Search Bluesky posts."""
         elapsed = time.time() - self._last_request
         if elapsed < self._min_interval:
             time.sleep(self._min_interval - elapsed)
@@ -49,9 +99,16 @@ class BlueskySource:
         if since:
             params["since"] = since
 
-        url = f"{self.BASE_URL}/xrpc/app.bsky.feed.searchPosts"
+        url = f"{self._base_url}/xrpc/app.bsky.feed.searchPosts"
         resp = self.session.get(url, params=params, timeout=15)
         self._last_request = time.time()
+
+        # Handle auth expiry — refresh and retry once
+        if resp.status_code == 401 and self._access_jwt:
+            self._refresh_session()
+            resp = self.session.get(url, params=params, timeout=15)
+            self._last_request = time.time()
+
         if resp.status_code == 429:
             logger.warning("Bluesky rate limited, backing off 10s")
             time.sleep(10)
