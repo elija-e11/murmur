@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 
 # Separate queries per symbol (OR operator is unreliable on Bluesky search)
 SYMBOL_SEARCH_TERMS = {
-    "BTC": ["bitcoin", "btc"],
-    "ETH": ["ethereum", "eth"],
-    "SOL": ["solana"],
-    "AVAX": ["avalanche"],
-    "LINK": ["chainlink"],
-    "DOGE": ["dogecoin", "doge"],
-    "ADA": ["cardano"],
-    "DOT": ["polkadot"],
+    "BTC": ["bitcoin", "#btc"],
+    "ETH": ["ethereum", "#eth"],
+    "SOL": ["solana", "#sol"],
+    "AVAX": ["avalanche", "#avax"],
+    "LINK": ["chainlink", "#link"],
+    "DOGE": ["dogecoin", "#doge"],
+    "ADA": ["cardano", "#ada"],
+    "DOT": ["polkadot", "#dot"],
 }
 
 
@@ -112,6 +112,9 @@ class BlueskySource:
         if resp.status_code == 429:
             logger.warning("Bluesky rate limited, backing off 10s")
             time.sleep(10)
+        if not resp.ok:
+            body = resp.text[:200] if resp.text else ""
+            logger.error(f"Bluesky search failed ({resp.status_code}) for q={query!r}: {body}")
         resp.raise_for_status()
         return resp.json().get("posts", [])
 
