@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Murmur Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="header">
+    <h1><span>MURMUR</span></h1>
+    <div class="header-meta">
+        <div class="watchlist">
+            {% for asset in watchlist %}
+            <span class="chip">{{ asset }}</span>
+            {% endfor %}
+        </div>
+        <span class="mode-badge {{ mode }}">{{ mode }}</span>
+        <div class="pulse" title="Auto-refreshing"></div>
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Portfolio Summary -->
+    <div class="section"
+         hx-get="/partials/portfolio"
+         hx-trigger="every 15s"
+         hx-swap="innerHTML">
+        {% include "partials/portfolio.html" %}
+    </div>
+
+    <!-- Charts -->
+    <div class="section grid grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h2>Portfolio Value</h2>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="portfolioChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2>Price Chart</h2>
+                <select id="chartAsset" onchange="loadPriceChart(this.value)" style="background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;">
+                    {% for asset in watchlist %}
+                    <option value="{{ asset }}">{{ asset }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signals -->
+    <div class="section">
+        <div class="card">
+            <div class="card-header">
+                <h2>Recent Signals</h2>
+                <span class="htmx-indicator"><span class="spinner"></span></span>
+            </div>
+            <div hx-get="/partials/signals"
+                 hx-trigger="every 15s"
+                 hx-swap="innerHTML"
+                 hx-indicator="closest .card">
+                {% include "partials/signals.html" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Trades -->
+    <div class="section">
+        <div class="card">
+            <div class="card-header">
+                <h2>Recent Trades</h2>
+                <span class="htmx-indicator"><span class="spinner"></span></span>
+            </div>
+            <div hx-get="/partials/trades"
+                 hx-trigger="every 15s"
+                 hx-swap="innerHTML"
+                 hx-indicator="closest .card">
+                {% include "partials/trades.html" %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const chartColors = {
+    cyan: '#39d2c0',
+    green: '#3fb950',
+    red: '#f85149',
+    blue: '#58a6ff',
+    border: '#30363d',
+    bg: '#161b22',
+    grid: 'rgba(48, 54, 61, 0.5)',
+    text: '#8b949e',
+};
+
+Chart.defaults.color = chartColors.text;
+Chart.defaults.borderColor = chartColors.grid;
+
+// Portfolio chart
+let portfolioChart = null;
+
+async function loadPortfolioChart() {
+    try {
+        const resp = await fetch('/api/portfolio-history');
+        const data = await resp.json();
+        if (!data.dates.length) return;
+
+        const ctx = document.getElementById('portfolioChart').getContext('2d');
+        if (portfolioChart) portfolioChart.destroy();
+
+        portfolioChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [{
+                    label: 'Portfolio Value',
+                    data: data.balances,
+                    borderColor: chartColors.cyan,
+                    backgroundColor: 'rgba(57, 210, 192, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                    borderWidth: 2,
+                }, {
+                    label: 'Daily P&L',
+                    data: data.pnl,
+                    type: 'bar',
+                    backgroundColor: data.pnl.map(v => v >= 0 ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)'),
+                    borderColor: data.pnl.map(v => v >= 0 ? chartColors.green : chartColors.red),
+                    borderWidth: 1,
+                    yAxisID: 'pnl',
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: true, position: 'top', labels: { boxWidth: 12, padding: 16 } },
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: {
+                        position: 'left',
+                        grid: { color: chartColors.grid },
+                        ticks: { callback: v => '$' + v.toLocaleString() },
+                    },
+                    pnl: {
+                        position: 'right',
+                        grid: { display: false },
+                        ticks: { callback: v => '$' + v.toFixed(0) },
+                    },
+                },
+            },
+        });
+    } catch (e) {
+        console.log('No portfolio history yet');
+    }
+}
+
+// Price chart
+let priceChart = null;
+
+async function loadPriceChart(productId) {
+    try {
+        const resp = await fetch(`/api/candles/${productId}?timeframe=1h&limit=100`);
+        const data = await resp.json();
+        if (!data.candles.length) return;
+
+        const labels = data.candles.map(c => {
+            const d = new Date(c.time * 1000);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+                   d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        });
+        const closes = data.candles.map(c => c.close);
+        const volumes = data.candles.map(c => c.volume);
+
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        if (priceChart) priceChart.destroy();
+
+        // Color line by trend
+        const priceUp = closes[closes.length - 1] >= closes[0];
+
+        priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: productId,
+                    data: closes,
+                    borderColor: priceUp ? chartColors.green : chartColors.red,
+                    backgroundColor: priceUp ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                }, {
+                    label: 'Volume',
+                    data: volumes,
+                    type: 'bar',
+                    backgroundColor: 'rgba(88, 166, 255, 0.15)',
+                    borderColor: 'transparent',
+                    yAxisID: 'vol',
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                if (ctx.datasetIndex === 0) return `$${ctx.parsed.y.toLocaleString()}`;
+                                return `Vol: ${ctx.parsed.y.toLocaleString()}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 8 },
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: chartColors.grid },
+                        ticks: { callback: v => '$' + v.toLocaleString() },
+                    },
+                    vol: {
+                        position: 'right',
+                        grid: { display: false },
+                        ticks: { display: false },
+                        max: Math.max(...volumes) * 4,
+                    },
+                },
+            },
+        });
+    } catch (e) {
+        console.log('No price data yet for', productId);
+    }
+}
+
+// Initial load
+loadPortfolioChart();
+loadPriceChart(document.getElementById('chartAsset')?.value || 'BTC-USD');
+
+// Refresh charts periodically
+setInterval(() => {
+    loadPortfolioChart();
+    loadPriceChart(document.getElementById('chartAsset')?.value || 'BTC-USD');
+}, 60000);
+</script>
+
+</body>
+</html>

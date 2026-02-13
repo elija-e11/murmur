@@ -1,0 +1,41 @@
+{% if signals %}
+<div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Asset</th>
+                <th>Strategy</th>
+                <th>Action</th>
+                <th class="right">Confidence</th>
+                <th>Reasoning</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in signals %}
+            <tr>
+                <td class="mono" style="color:var(--text-dim)">{{ s.time_str }}</td>
+                <td><strong>{{ s.product_id }}</strong></td>
+                <td>{{ s.strategy }}</td>
+                <td>
+                    <span class="badge badge-{{ s.action }}">{{ s.action }}</span>
+                </td>
+                <td class="right">
+                    <div class="confidence-bar">
+                        <span class="mono">{{ "%.0f"|format(s.confidence * 100) }}%</span>
+                        <div class="confidence-track">
+                            <div class="confidence-fill" style="width:{{ (s.confidence * 100)|int }}%;background:{% if s.action == 'buy' %}var(--green){% elif s.action == 'sell' %}var(--red){% else %}var(--text-dim){% endif %}"></div>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <span class="reasoning" title="{{ s.reasoning }}">{{ s.reasoning[:80] }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty">No signals yet. Waiting for first analysis cycle...</div>
+{% endif %}

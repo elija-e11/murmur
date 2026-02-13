@@ -1,0 +1,38 @@
+{% if trades %}
+<div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Asset</th>
+                <th>Side</th>
+                <th>Type</th>
+                <th class="right">Price</th>
+                <th class="right">Quantity</th>
+                <th class="right">Total</th>
+                <th>Mode</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in trades %}
+            <tr>
+                <td class="mono" style="color:var(--text-dim)">{{ t.time_str }}</td>
+                <td><strong>{{ t.product_id }}</strong></td>
+                <td>
+                    <span class="badge badge-{{ t.side }}">{{ t.side }}</span>
+                </td>
+                <td style="color:var(--text-secondary)">{{ t.order_type }}</td>
+                <td class="right mono">${{ "{:,.2f}".format(t.price) }}</td>
+                <td class="right mono">{{ "%.6f"|format(t.quantity) }}</td>
+                <td class="right mono">${{ "{:,.2f}".format(t.total) }}</td>
+                <td>
+                    <span class="mode-badge {{ t.execution_mode }}" style="font-size:10px">{{ t.execution_mode }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty">No trades yet.</div>
+{% endif %}

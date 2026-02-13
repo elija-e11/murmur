@@ -1,0 +1,349 @@
+:root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2333;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-dim: #484f58;
+    --green: #3fb950;
+    --green-dim: #238636;
+    --red: #f85149;
+    --red-dim: #da3633;
+    --blue: #58a6ff;
+    --yellow: #d29922;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* Header */
+.header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-secondary);
+}
+
+.header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.header h1 span {
+    color: var(--cyan);
+}
+
+.header-meta {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.mode-badge {
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mode-badge.paper {
+    background: var(--yellow);
+    color: #000;
+}
+
+.mode-badge.live {
+    background: var(--red);
+    color: #fff;
+}
+
+.pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Layout */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.grid {
+    display: grid;
+    gap: 20px;
+}
+
+.grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.grid-2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 900px) {
+    .grid-3, .grid-2 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Cards */
+.card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.card-body {
+    padding: 16px;
+}
+
+/* Stat cards */
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+thead th {
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+td.right, th.right {
+    text-align: right;
+}
+
+td.mono {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+}
+
+/* Action badges */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.badge-buy {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green);
+}
+
+.badge-sell {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--red);
+}
+
+.badge-hold {
+    background: rgba(139, 148, 158, 0.1);
+    color: var(--text-dim);
+}
+
+/* P&L coloring */
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+.neutral { color: var(--text-secondary); }
+
+/* Confidence bar */
+.confidence-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.confidence-track {
+    width: 48px;
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.confidence-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* Chart container */
+.chart-container {
+    position: relative;
+    height: 280px;
+    padding: 8px;
+}
+
+/* Reasoning text */
+.reasoning {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+/* Empty state */
+.empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-dim);
+    font-size: 13px;
+}
+
+/* Section spacing */
+.section {
+    margin-bottom: 24px;
+}
+
+/* Watchlist chips */
+.watchlist {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.chip {
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.chip:hover, .chip.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+}
+
+/* Scrollable table wrapper */
+.table-scroll {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.table-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+/* htmx loading indicator */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
+.spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
