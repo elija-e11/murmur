@@ -42,11 +42,11 @@ class TestSocialAggregator:
         self.agg = SocialAggregator(self.config)
 
     def test_init_with_no_creds(self):
-        # Should still have fear_greed and coingecko (no auth required)
+        # Should still have fear_greed, coingecko, and bluesky (no auth required)
         assert "fear_greed" in self.agg.sources_available
         assert "coingecko" in self.agg.sources_available
+        assert "bluesky" in self.agg.sources_available
         assert "reddit" not in self.agg.sources_available
-        # CryptoPanic disabled (too expensive)
 
     def test_product_to_symbol(self):
         assert product_to_symbol("BTC-USD") == "BTC"
@@ -54,46 +54,54 @@ class TestSocialAggregator:
 
     def test_compute_sentiment_neutral_default(self):
         # No source data → neutral (2.5)
-        result = self.agg._compute_sentiment({}, {})
+        result = self.agg._compute_sentiment({}, {}, {})
         assert result == 2.5
 
     def test_compute_sentiment_with_fear_greed(self):
         fg = {"value": 75, "classification": "Greed"}
-        result = self.agg._compute_sentiment({}, fg)
+        result = self.agg._compute_sentiment({}, {}, fg)
         assert result > 2.5  # Greed → bullish
 
     def test_compute_sentiment_with_all_sources(self):
         reddit = {"mention_count": 10, "avg_sentiment": 0.5}
+        bluesky = {"mention_count": 5, "weighted_sentiment": 0.4}
         fg = {"value": 60}
-        result = self.agg._compute_sentiment(reddit, fg)
+        result = self.agg._compute_sentiment(reddit, bluesky, fg)
         assert 2.5 < result <= 5.0  # All positive → above neutral
 
     def test_compute_social_volume(self):
         reddit = {"mention_count": 10, "total_comments": 50}
-        vol = self.agg._compute_social_volume(reddit)
-        assert vol == 10 * 10 + 50  # 150
+        bluesky = {"mention_count": 5, "total_replies": 20}
+        vol = self.agg._compute_social_volume(reddit, bluesky)
+        assert vol == 10 * 10 + 50 + 5 * 8 + 20  # 210
 
     def test_compute_social_volume_no_data(self):
-        assert self.agg._compute_social_volume({}) == 0
+        assert self.agg._compute_social_volume({}, {}) == 0
 
     def test_compute_composite_score_range(self):
         reddit = {"mention_count": 5, "avg_sentiment": 0.3, "avg_upvote_ratio": 0.8}
+        bluesky = {"mention_count": 3, "weighted_sentiment": 0.2}
         fg = {"value": 65}
         cg = {"community_score": 50}
-        score = self.agg._compute_composite_score(reddit, fg, cg)
+        score = self.agg._compute_composite_score(reddit, bluesky, fg, cg)
         assert score is not None
         assert 0 <= score <= 100
 
     def test_compute_composite_score_no_data(self):
-        assert self.agg._compute_composite_score({}, {}, {}) is None
+        assert self.agg._compute_composite_score({}, {}, {}, {}) is None
 
+    @patch.object(SocialAggregator, "_fetch_bluesky")
     @patch.object(SocialAggregator, "_fetch_fear_greed")
     @patch.object(SocialAggregator, "_fetch_coingecko")
-    def test_fetch_watchlist_data(self, mock_cg, mock_fg):
+    def test_fetch_watchlist_data(self, mock_cg, mock_fg, mock_bsky):
         mock_fg.return_value = {"value": 55, "classification": "Neutral", "normalized_score": 0.1}
         mock_cg.return_value = {
             "market_cap": 1e12, "price": 50000, "community_score": 60,
             "reddit_subscribers": 5000000, "reddit_active_48h": 10000,
+        }
+        mock_bsky.return_value = {
+            "mention_count": 15, "avg_sentiment": 0.3, "weighted_sentiment": 0.35,
+            "total_likes": 50, "total_reposts": 10, "total_replies": 8,
         }
         records = self.agg.fetch_watchlist_data(["BTC-USD", "ETH-USD"])
         assert len(records) == 2
@@ -104,11 +112,13 @@ class TestSocialAggregator:
         # Sentiment should be populated
         assert records[0]["sentiment"] is not None
 
+    @patch.object(SocialAggregator, "_fetch_bluesky")
     @patch.object(SocialAggregator, "_fetch_fear_greed")
     @patch.object(SocialAggregator, "_fetch_coingecko")
-    def test_social_dominance_computed(self, mock_cg, mock_fg):
+    def test_social_dominance_computed(self, mock_cg, mock_fg, mock_bsky):
         mock_fg.return_value = {"value": 50}
         mock_cg.return_value = {"market_cap": 0, "price": 0}
+        mock_bsky.return_value = {}
         # Manually inject reddit source mock to get different volumes
         self.agg.sources_available["reddit"] = MagicMock()
         self.agg.sources_available["reddit"].get_asset_metrics.side_effect = [

@@ -1,4 +1,4 @@
-"""Social data aggregator — combines Reddit, CryptoPanic, Fear & Greed, and CoinGecko
+"""Social data aggregator — combines Reddit, Bluesky, Fear & Greed, and CoinGecko
 into unified social metrics matching the format the sentiment analyzer expects."""
 
 import logging
@@ -55,10 +55,13 @@ class SocialAggregator:
         else:
             logger.info("Reddit source skipped (no credentials)")
 
-        # CryptoPanic — disabled (free tier: 100 req/month with 24h delay,
-        # Growth tier: $199/month). Not worth it for this use case.
-        # Keeping the code in case we revisit later.
-        logger.info("CryptoPanic source disabled (not cost-effective)")
+        # Bluesky — always available (no auth needed, public AT Protocol API)
+        try:
+            from src.ingestion.sources.bluesky import BlueskySource
+            self.sources_available["bluesky"] = BlueskySource()
+            logger.info("Bluesky source initialized")
+        except Exception as e:
+            logger.warning(f"Bluesky source failed to init: {e}")
 
         # Fear & Greed — always available (no auth needed)
         try:
@@ -90,6 +93,17 @@ class SocialAggregator:
             logger.error(f"Reddit fetch failed for {symbol}: {e}")
             return {}
 
+    def _fetch_bluesky(self, symbol: str) -> dict:
+        """Fetch Bluesky metrics for a symbol."""
+        bsky = self.sources_available.get("bluesky")
+        if not bsky:
+            return {}
+        try:
+            return bsky.get_asset_metrics(symbol)
+        except Exception as e:
+            logger.error(f"Bluesky fetch failed for {symbol}: {e}")
+            return {}
+
     def _fetch_fear_greed(self) -> dict:
         """Fetch current Fear & Greed index."""
         fg = self.sources_available.get("fear_greed")
@@ -112,7 +126,7 @@ class SocialAggregator:
             logger.error(f"CoinGecko fetch failed for {symbol}: {e}")
             return {}
 
-    def _compute_composite_score(self, reddit: dict,
+    def _compute_composite_score(self, reddit: dict, bluesky: dict,
                                   fear_greed: dict, coingecko: dict) -> float | None:
         """Compute a composite score (0-100) from all available sources.
 
@@ -124,22 +138,27 @@ class SocialAggregator:
         # Reddit sentiment (-1 to +1) → 0-100
         if reddit.get("mention_count", 0) > 0:
             reddit_score = (reddit["avg_sentiment"] + 1) * 50  # -1..+1 → 0..100
-            # Boost if high engagement
             if reddit.get("avg_upvote_ratio", 0.5) > 0.7:
                 reddit_score = min(100, reddit_score + 5)
             scores.append(reddit_score)
-            weights.append(0.40)
+            weights.append(0.30)
+
+        # Bluesky sentiment (-1 to +1) → 0-100 (use engagement-weighted)
+        if bluesky.get("mention_count", 0) > 0:
+            bsky_score = (bluesky["weighted_sentiment"] + 1) * 50
+            scores.append(bsky_score)
+            weights.append(0.25)
 
         # Fear & Greed (already 0-100)
         if "value" in fear_greed:
             scores.append(fear_greed["value"])
-            weights.append(0.35)
+            weights.append(0.25)
 
         # CoinGecko community score (0-100ish)
         cg_score = coingecko.get("community_score")
         if cg_score and cg_score > 0:
             scores.append(min(100, cg_score))
-            weights.append(0.25)
+            weights.append(0.20)
 
         if not scores:
             return None
@@ -148,7 +167,8 @@ class SocialAggregator:
         total_weight = sum(weights)
         return sum(s * w for s, w in zip(scores, weights)) / total_weight
 
-    def _compute_sentiment(self, reddit: dict, fear_greed: dict) -> float:
+    def _compute_sentiment(self, reddit: dict, bluesky: dict,
+                            fear_greed: dict) -> float:
         """Compute sentiment on 0-5 scale (matching what SentimentAnalyzer expects).
 
         0 = very bearish, 2.5 = neutral, 5 = very bullish.
@@ -159,12 +179,17 @@ class SocialAggregator:
         # Reddit: -1..+1 → 0..5
         if reddit.get("mention_count", 0) > 0:
             scores.append((reddit["avg_sentiment"] + 1) * 2.5)
-            weights.append(0.55)
+            weights.append(0.35)
+
+        # Bluesky: -1..+1 → 0..5 (use engagement-weighted)
+        if bluesky.get("mention_count", 0) > 0:
+            scores.append((bluesky["weighted_sentiment"] + 1) * 2.5)
+            weights.append(0.30)
 
         # Fear & Greed: 0..100 → 0..5
         if "value" in fear_greed:
             scores.append(fear_greed["value"] / 20)
-            weights.append(0.45)
+            weights.append(0.35)
 
         if not scores:
             return 2.5  # neutral default
@@ -172,11 +197,13 @@ class SocialAggregator:
         total_weight = sum(weights)
         return sum(s * w for s, w in zip(scores, weights)) / total_weight
 
-    def _compute_social_volume(self, reddit: dict) -> float:
+    def _compute_social_volume(self, reddit: dict, bluesky: dict) -> float:
         """Compute social volume from mention counts."""
         volume = 0
-        volume += reddit.get("mention_count", 0) * 10  # Weight Reddit mentions higher
+        volume += reddit.get("mention_count", 0) * 10
         volume += reddit.get("total_comments", 0)
+        volume += bluesky.get("mention_count", 0) * 8
+        volume += bluesky.get("total_replies", 0)
         return float(volume)
 
     def fetch_asset_data(self, symbol: str, fear_greed: dict | None = None) -> dict:
@@ -190,15 +217,17 @@ class SocialAggregator:
             Record matching the social_data DB schema.
         """
         reddit = self._fetch_reddit(symbol)
+        bluesky = self._fetch_bluesky(symbol)
         fg = fear_greed or self._fetch_fear_greed()
         coingecko = self._fetch_coingecko(symbol)
 
-        composite = self._compute_composite_score(reddit, fg, coingecko)
-        sentiment = self._compute_sentiment(reddit, fg)
-        social_volume = self._compute_social_volume(reddit)
+        composite = self._compute_composite_score(reddit, bluesky, fg, coingecko)
+        sentiment = self._compute_sentiment(reddit, bluesky, fg)
+        social_volume = self._compute_social_volume(reddit, bluesky)
 
         raw = {
             "reddit": reddit,
+            "bluesky": bluesky,
             "fear_greed": fg,
             "coingecko": {k: v for k, v in coingecko.items() if k != "raw"},
         }
