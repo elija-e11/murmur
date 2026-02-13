@@ -7,6 +7,35 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+# Module-level health dict — written by SocialAggregator, read by web app.
+# No locking needed: single writer (scheduler thread), readers get a consistent-enough snapshot.
+source_health: dict[str, dict] = {}
+
+
+def _now_ts() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _record_success(name: str, summary: str):
+    h = source_health.setdefault(name, {
+        "last_success": None, "last_error": None, "last_error_msg": None,
+        "fetch_count": 0, "success_count": 0, "last_result_summary": None,
+    })
+    h["fetch_count"] += 1
+    h["success_count"] += 1
+    h["last_success"] = _now_ts()
+    h["last_result_summary"] = summary
+
+
+def _record_error(name: str, error: str):
+    h = source_health.setdefault(name, {
+        "last_success": None, "last_error": None, "last_error_msg": None,
+        "fetch_count": 0, "success_count": 0, "last_result_summary": None,
+    })
+    h["fetch_count"] += 1
+    h["last_error"] = _now_ts()
+    h["last_error_msg"] = str(error)[:200]
+
 
 def product_to_symbol(product_id: str) -> str:
     """Convert Coinbase product ID (e.g., 'BTC-USD') to symbol ('BTC')."""
@@ -35,6 +64,12 @@ class SocialAggregator:
         secrets = config.get("secrets", {})
         self.sources_available = {}
         self._init_sources(secrets)
+        # Seed health entries for all known sources (including those not initialized)
+        for name in ("reddit", "bluesky", "fear_greed", "coingecko", "coinbase"):
+            source_health.setdefault(name, {
+                "last_success": None, "last_error": None, "last_error_msg": None,
+                "fetch_count": 0, "success_count": 0, "last_result_summary": None,
+            })
 
     def _init_sources(self, secrets: dict):
         """Initialize available sources. Missing credentials = source skipped."""
@@ -88,9 +123,14 @@ class SocialAggregator:
         if not reddit:
             return {}
         try:
-            return reddit.get_asset_metrics(symbol)
+            result = reddit.get_asset_metrics(symbol)
+            mentions = result.get("mention_count", 0)
+            sent = result.get("avg_sentiment", 0)
+            _record_success("reddit", f"{mentions} mentions, sentiment {sent:.2f}")
+            return result
         except Exception as e:
             logger.error(f"Reddit fetch failed for {symbol}: {e}")
+            _record_error("reddit", e)
             return {}
 
     def _fetch_bluesky(self, symbol: str) -> dict:
@@ -99,9 +139,14 @@ class SocialAggregator:
         if not bsky:
             return {}
         try:
-            return bsky.get_asset_metrics(symbol)
+            result = bsky.get_asset_metrics(symbol)
+            mentions = result.get("mention_count", 0)
+            sent = result.get("weighted_sentiment", 0)
+            _record_success("bluesky", f"{mentions} mentions, sentiment {sent:.2f}")
+            return result
         except Exception as e:
             logger.error(f"Bluesky fetch failed for {symbol}: {e}")
+            _record_error("bluesky", e)
             return {}
 
     def _fetch_fear_greed(self) -> dict:
@@ -110,9 +155,14 @@ class SocialAggregator:
         if not fg:
             return {}
         try:
-            return fg.get_current()
+            result = fg.get_current()
+            val = result.get("value", "?")
+            label = result.get("classification", "")
+            _record_success("fear_greed", f"F&G: {val} ({label})")
+            return result
         except Exception as e:
             logger.error(f"Fear & Greed fetch failed: {e}")
+            _record_error("fear_greed", e)
             return {}
 
     def _fetch_coingecko(self, symbol: str) -> dict:
@@ -121,9 +171,17 @@ class SocialAggregator:
         if not cg:
             return {}
         try:
-            return cg.get_coin_data(symbol)
+            result = cg.get_coin_data(symbol)
+            price = result.get("price")
+            score = result.get("community_score")
+            summary = f"${price:,.0f}" if price else "no price"
+            if score:
+                summary += f", community {score:.0f}"
+            _record_success("coingecko", summary)
+            return result
         except Exception as e:
             logger.error(f"CoinGecko fetch failed for {symbol}: {e}")
+            _record_error("coingecko", e)
             return {}
 
     def _compute_composite_score(self, reddit: dict, bluesky: dict,

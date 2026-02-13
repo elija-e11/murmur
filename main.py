@@ -15,7 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from src.config import get_config
 from src.storage.db import Database
 from src.ingestion.market import MarketDataClient
-from src.ingestion.social import SocialAggregator
+from src.ingestion.social import SocialAggregator, _record_success, _record_error
 from src.analysis.technical import TechnicalAnalyzer
 from src.analysis.sentiment import SentimentAnalyzer
 from src.strategy.engine import StrategyEngine
@@ -83,14 +83,21 @@ class Murmur:
     def fetch_market_data(self):
         """Fetch and store candles for all watchlist assets."""
         timeframes = self.config.get("timeframes", ["1h"])
+        ok_count = 0
+        total_count = 0
         for product_id in self.watchlist:
             for tf in timeframes:
+                total_count += 1
                 try:
                     candles = self.market.get_candles(product_id, tf, limit=200)
                     self.db.upsert_candles(product_id, tf, candles)
                     logger.debug(f"Stored {len(candles)} {tf} candles for {product_id}")
+                    ok_count += 1
                 except Exception as e:
                     logger.error(f"Failed to fetch candles for {product_id}/{tf}: {e}")
+                    _record_error("coinbase", e)
+        if ok_count > 0:
+            _record_success("coinbase", f"{ok_count}/{total_count} fetches OK")
 
     def fetch_social_data(self):
         """Fetch and store social data for all watchlist assets."""

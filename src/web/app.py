@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.storage.db import Database
 from src.config import get_config
+from src.ingestion.social import source_health
 
 _WEB_DIR = Path(__file__).parent
 app = FastAPI(title="Murmur Dashboard")
@@ -215,6 +216,67 @@ async def api_recent_signals(limit: int = 50):
             except (json.JSONDecodeError, TypeError):
                 pass
     return {"signals": signals}
+
+
+_SOURCE_DISPLAY_NAMES = {
+    "reddit": "Reddit",
+    "bluesky": "Bluesky",
+    "fear_greed": "Fear & Greed",
+    "coingecko": "CoinGecko",
+    "coinbase": "Coinbase",
+}
+
+
+@app.get("/api/source-health")
+async def api_source_health():
+    return source_health
+
+
+@app.get("/partials/source-health", response_class=HTMLResponse)
+async def partial_source_health(request: Request):
+    now = datetime.now(timezone.utc).timestamp()
+    sources = []
+    for key in ("reddit", "bluesky", "coingecko", "fear_greed", "coinbase"):
+        h = source_health.get(key, {})
+        fc = h.get("fetch_count", 0)
+        sc = h.get("success_count", 0)
+
+        # Determine status
+        if fc == 0:
+            status = "off"
+        elif h.get("last_error") and (not h.get("last_success") or h["last_error"] > h["last_success"]):
+            status = "error"
+        elif fc > 0 and sc < fc and sc > 0:
+            status = "warn"
+        else:
+            status = "ok"
+
+        # Relative time for last success
+        last_ok = h.get("last_success")
+        if last_ok:
+            delta = int(now - last_ok)
+            if delta < 60:
+                ago = f"{delta}s ago"
+            elif delta < 3600:
+                ago = f"{delta // 60}m ago"
+            else:
+                ago = f"{delta // 3600}h ago"
+        else:
+            ago = "never"
+
+        sources.append({
+            "name": _SOURCE_DISPLAY_NAMES.get(key, key),
+            "status": status,
+            "ago": ago,
+            "summary": h.get("last_result_summary") or "—",
+            "rate": f"{sc}/{fc}" if fc else "—",
+            "error_msg": h.get("last_error_msg") or "",
+        })
+
+    return templates.TemplateResponse("partials/source-health.html", {
+        "request": request,
+        "sources": sources,
+    })
 
 
 def create_app(config_path: str | None = None) -> FastAPI:

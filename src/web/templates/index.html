@@ -33,6 +33,21 @@
         {% include "partials/portfolio.html" %}
     </div>
 
+    <!-- Data Sources -->
+    <div class="section">
+        <div class="card">
+            <div class="card-header">
+                <h2>Data Sources</h2>
+                <span class="htmx-indicator"><span class="spinner"></span></span>
+            </div>
+            <div hx-get="/partials/source-health"
+                 hx-trigger="load, every 30s"
+                 hx-swap="innerHTML"
+                 hx-indicator="closest .card">
+            </div>
+        </div>
+    </div>
+
     <!-- Charts -->
     <div class="section grid grid-2">
         <div class="card">

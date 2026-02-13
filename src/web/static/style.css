@@ -225,6 +225,27 @@ td.mono {
     color: var(--text-dim);
 }
 
+/* Source health badges */
+.status-ok {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green);
+}
+
+.status-warn {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--yellow);
+}
+
+.status-error {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--red);
+}
+
+.status-off {
+    background: rgba(139, 148, 158, 0.1);
+    color: var(--text-dim);
+}
+
 /* P&L coloring */
 .positive { color: var(--green); }
 .negative { color: var(--red); }

@@ -1,0 +1,30 @@
+<table>
+    <thead>
+        <tr>
+            <th>Source</th>
+            <th>Status</th>
+            <th>Last OK</th>
+            <th>Latest</th>
+            <th class="right">Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in sources %}
+        <tr>
+            <td><strong>{{ s.name }}</strong></td>
+            <td>
+                <span class="badge status-{{ s.status }}">{{ s.status | upper }}</span>
+            </td>
+            <td class="mono">{{ s.ago }}</td>
+            <td class="reasoning" title="{{ s.error_msg if s.status == 'error' else s.summary }}">
+                {% if s.status == 'error' %}
+                    <span class="negative">{{ s.error_msg[:60] }}</span>
+                {% else %}
+                    {{ s.summary }}
+                {% endif %}
+            </td>
+            <td class="right mono">{{ s.rate }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
