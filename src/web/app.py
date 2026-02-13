@@ -1,11 +1,12 @@
 """Web dashboard — FastAPI app with htmx-powered live updates."""
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -16,6 +17,23 @@ _WEB_DIR = Path(__file__).parent
 app = FastAPI(title="Murmur Dashboard")
 app.mount("/static", StaticFiles(directory=_WEB_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
+
+
+@app.middleware("http")
+async def ip_whitelist(request: Request, call_next):
+    """Block requests from IPs not in ALLOWED_IPS (comma-separated).
+
+    If ALLOWED_IPS is not set, all IPs are allowed.
+    """
+    allowed = os.getenv("ALLOWED_IPS", "")
+    if allowed:
+        allowed_set = {ip.strip() for ip in allowed.split(",")}
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if not client_ip:
+            client_ip = request.client.host
+        if client_ip not in allowed_set:
+            return PlainTextResponse("Forbidden", status_code=403)
+    return await call_next(request)
 
 
 def _get_db() -> Database:
