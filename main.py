@@ -175,6 +175,10 @@ class Murmur:
 
         self._running = True
 
+        # Start web dashboard first so healthchecks pass during data fetch
+        if web:
+            self._start_web_server(web_port)
+
         # Initial data fetch
         logger.info("Fetching initial data...")
         self.fetch_market_data()
@@ -200,10 +204,6 @@ class Murmur:
         )
 
         self.scheduler.start()
-
-        # Start web dashboard if requested
-        if web:
-            self._start_web_server(web_port)
 
         logger.info("Scheduler started. Press Ctrl+C to stop.")
 
