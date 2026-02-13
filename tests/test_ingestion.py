@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 from src.storage.db import Database
 from src.ingestion.social import SocialAggregator, product_to_symbol
 from src.ingestion.sources.fear_greed import FearGreedSource
-from src.ingestion.sources.cryptopanic import CryptoPanicSource
 from src.ingestion.sources.reddit import _keyword_sentiment
 
 
@@ -47,7 +46,7 @@ class TestSocialAggregator:
         assert "fear_greed" in self.agg.sources_available
         assert "coingecko" in self.agg.sources_available
         assert "reddit" not in self.agg.sources_available
-        assert "cryptopanic" not in self.agg.sources_available
+        # CryptoPanic disabled (too expensive)
 
     def test_product_to_symbol(self):
         assert product_to_symbol("BTC-USD") == "BTC"
@@ -55,41 +54,38 @@ class TestSocialAggregator:
 
     def test_compute_sentiment_neutral_default(self):
         # No source data → neutral (2.5)
-        result = self.agg._compute_sentiment({}, {}, {})
+        result = self.agg._compute_sentiment({}, {})
         assert result == 2.5
 
     def test_compute_sentiment_with_fear_greed(self):
         fg = {"value": 75, "classification": "Greed"}
-        result = self.agg._compute_sentiment({}, {}, fg)
+        result = self.agg._compute_sentiment({}, fg)
         assert result > 2.5  # Greed → bullish
 
     def test_compute_sentiment_with_all_sources(self):
         reddit = {"mention_count": 10, "avg_sentiment": 0.5}
-        cp = {"news_count": 5, "sentiment_score": 0.3}
         fg = {"value": 60}
-        result = self.agg._compute_sentiment(reddit, cp, fg)
+        result = self.agg._compute_sentiment(reddit, fg)
         assert 2.5 < result <= 5.0  # All positive → above neutral
 
     def test_compute_social_volume(self):
         reddit = {"mention_count": 10, "total_comments": 50}
-        cp = {"news_count": 5}
-        vol = self.agg._compute_social_volume(reddit, cp)
-        assert vol == 10 * 10 + 50 + 5 * 5  # 175
+        vol = self.agg._compute_social_volume(reddit)
+        assert vol == 10 * 10 + 50  # 150
 
     def test_compute_social_volume_no_data(self):
-        assert self.agg._compute_social_volume({}, {}) == 0
+        assert self.agg._compute_social_volume({}) == 0
 
     def test_compute_composite_score_range(self):
         reddit = {"mention_count": 5, "avg_sentiment": 0.3, "avg_upvote_ratio": 0.8}
-        cp = {"news_count": 3, "sentiment_score": 0.2}
         fg = {"value": 65}
         cg = {"community_score": 50}
-        score = self.agg._compute_composite_score(reddit, cp, fg, cg)
+        score = self.agg._compute_composite_score(reddit, fg, cg)
         assert score is not None
         assert 0 <= score <= 100
 
     def test_compute_composite_score_no_data(self):
-        assert self.agg._compute_composite_score({}, {}, {}, {}) is None
+        assert self.agg._compute_composite_score({}, {}, {}) is None
 
     @patch.object(SocialAggregator, "_fetch_fear_greed")
     @patch.object(SocialAggregator, "_fetch_coingecko")
@@ -122,30 +118,6 @@ class TestSocialAggregator:
         records = self.agg.fetch_watchlist_data(["BTC-USD", "ETH-USD"])
         # BTC should have higher dominance than ETH
         assert records[0]["social_dominance"] > records[1]["social_dominance"]
-
-
-class TestCryptoPanicSource:
-    def setup_method(self):
-        self.client = CryptoPanicSource(api_key="test-key")
-
-    @patch.object(CryptoPanicSource, "get_news")
-    def test_get_asset_sentiment_bullish(self, mock_news):
-        mock_news.return_value = [
-            {"votes": {"positive": 5, "negative": 1, "important": 2}},
-            {"votes": {"positive": 3, "negative": 0, "important": 0}},
-            {"votes": {"positive": 0, "negative": 4, "important": 0}},
-        ]
-        result = self.client.get_asset_sentiment("BTC")
-        assert result["news_count"] == 3
-        # 2 bullish (one gets extra from important) + 1 bearish
-        assert result["sentiment_score"] > 0
-
-    @patch.object(CryptoPanicSource, "get_news")
-    def test_get_asset_sentiment_no_news(self, mock_news):
-        mock_news.return_value = []
-        result = self.client.get_asset_sentiment("NONEXIST")
-        assert result["sentiment_score"] == 0
-        assert result["news_count"] == 0
 
 
 class TestFearGreedSource:

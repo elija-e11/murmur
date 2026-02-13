@@ -55,17 +55,10 @@ class SocialAggregator:
         else:
             logger.info("Reddit source skipped (no credentials)")
 
-        # CryptoPanic
-        cp_key = secrets.get("cryptopanic_api_key", "")
-        if cp_key:
-            try:
-                from src.ingestion.sources.cryptopanic import CryptoPanicSource
-                self.sources_available["cryptopanic"] = CryptoPanicSource(api_key=cp_key)
-                logger.info("CryptoPanic source initialized")
-            except Exception as e:
-                logger.warning(f"CryptoPanic source failed to init: {e}")
-        else:
-            logger.info("CryptoPanic source skipped (no API key)")
+        # CryptoPanic — disabled (free tier: 100 req/month with 24h delay,
+        # Growth tier: $199/month). Not worth it for this use case.
+        # Keeping the code in case we revisit later.
+        logger.info("CryptoPanic source disabled (not cost-effective)")
 
         # Fear & Greed — always available (no auth needed)
         try:
@@ -97,17 +90,6 @@ class SocialAggregator:
             logger.error(f"Reddit fetch failed for {symbol}: {e}")
             return {}
 
-    def _fetch_cryptopanic(self, symbol: str) -> dict:
-        """Fetch CryptoPanic sentiment for a symbol."""
-        cp = self.sources_available.get("cryptopanic")
-        if not cp:
-            return {}
-        try:
-            return cp.get_asset_sentiment(symbol)
-        except Exception as e:
-            logger.error(f"CryptoPanic fetch failed for {symbol}: {e}")
-            return {}
-
     def _fetch_fear_greed(self) -> dict:
         """Fetch current Fear & Greed index."""
         fg = self.sources_available.get("fear_greed")
@@ -130,7 +112,7 @@ class SocialAggregator:
             logger.error(f"CoinGecko fetch failed for {symbol}: {e}")
             return {}
 
-    def _compute_composite_score(self, reddit: dict, cryptopanic: dict,
+    def _compute_composite_score(self, reddit: dict,
                                   fear_greed: dict, coingecko: dict) -> float | None:
         """Compute a composite score (0-100) from all available sources.
 
@@ -146,24 +128,18 @@ class SocialAggregator:
             if reddit.get("avg_upvote_ratio", 0.5) > 0.7:
                 reddit_score = min(100, reddit_score + 5)
             scores.append(reddit_score)
-            weights.append(0.35)
-
-        # CryptoPanic news sentiment (-1 to +1) → 0-100
-        if cryptopanic.get("news_count", 0) > 0:
-            cp_score = (cryptopanic["sentiment_score"] + 1) * 50
-            scores.append(cp_score)
-            weights.append(0.25)
+            weights.append(0.40)
 
         # Fear & Greed (already 0-100)
         if "value" in fear_greed:
             scores.append(fear_greed["value"])
-            weights.append(0.25)
+            weights.append(0.35)
 
         # CoinGecko community score (0-100ish)
         cg_score = coingecko.get("community_score")
         if cg_score and cg_score > 0:
             scores.append(min(100, cg_score))
-            weights.append(0.15)
+            weights.append(0.25)
 
         if not scores:
             return None
@@ -172,8 +148,7 @@ class SocialAggregator:
         total_weight = sum(weights)
         return sum(s * w for s, w in zip(scores, weights)) / total_weight
 
-    def _compute_sentiment(self, reddit: dict, cryptopanic: dict,
-                            fear_greed: dict) -> float:
+    def _compute_sentiment(self, reddit: dict, fear_greed: dict) -> float:
         """Compute sentiment on 0-5 scale (matching what SentimentAnalyzer expects).
 
         0 = very bearish, 2.5 = neutral, 5 = very bullish.
@@ -184,17 +159,12 @@ class SocialAggregator:
         # Reddit: -1..+1 → 0..5
         if reddit.get("mention_count", 0) > 0:
             scores.append((reddit["avg_sentiment"] + 1) * 2.5)
-            weights.append(0.4)
-
-        # CryptoPanic: -1..+1 → 0..5
-        if cryptopanic.get("news_count", 0) > 0:
-            scores.append((cryptopanic["sentiment_score"] + 1) * 2.5)
-            weights.append(0.35)
+            weights.append(0.55)
 
         # Fear & Greed: 0..100 → 0..5
         if "value" in fear_greed:
             scores.append(fear_greed["value"] / 20)
-            weights.append(0.25)
+            weights.append(0.45)
 
         if not scores:
             return 2.5  # neutral default
@@ -202,12 +172,11 @@ class SocialAggregator:
         total_weight = sum(weights)
         return sum(s * w for s, w in zip(scores, weights)) / total_weight
 
-    def _compute_social_volume(self, reddit: dict, cryptopanic: dict) -> float:
+    def _compute_social_volume(self, reddit: dict) -> float:
         """Compute social volume from mention counts."""
         volume = 0
         volume += reddit.get("mention_count", 0) * 10  # Weight Reddit mentions higher
         volume += reddit.get("total_comments", 0)
-        volume += cryptopanic.get("news_count", 0) * 5
         return float(volume)
 
     def fetch_asset_data(self, symbol: str, fear_greed: dict | None = None) -> dict:
@@ -221,17 +190,15 @@ class SocialAggregator:
             Record matching the social_data DB schema.
         """
         reddit = self._fetch_reddit(symbol)
-        cryptopanic = self._fetch_cryptopanic(symbol)
         fg = fear_greed or self._fetch_fear_greed()
         coingecko = self._fetch_coingecko(symbol)
 
-        composite = self._compute_composite_score(reddit, cryptopanic, fg, coingecko)
-        sentiment = self._compute_sentiment(reddit, cryptopanic, fg)
-        social_volume = self._compute_social_volume(reddit, cryptopanic)
+        composite = self._compute_composite_score(reddit, fg, coingecko)
+        sentiment = self._compute_sentiment(reddit, fg)
+        social_volume = self._compute_social_volume(reddit)
 
         raw = {
             "reddit": reddit,
-            "cryptopanic": cryptopanic,
             "fear_greed": fg,
             "coingecko": {k: v for k, v in coingecko.items() if k != "raw"},
         }
