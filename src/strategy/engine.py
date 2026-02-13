@@ -93,12 +93,21 @@ class StrategyEngine:
                     "timestamp": int(datetime.now(timezone.utc).timestamp()),
                 }
 
-        # Default: hold
+        # Default: hold — report highest signal confidence so user can see what's building
+        all_nonzero = [s for s in signals if s.confidence > 0 and s.strategy != "hype_filter"]
+        if all_nonzero:
+            best = max(all_nonzero, key=lambda s: s.confidence)
+            hold_confidence = best.confidence
+            hold_reasoning = f"strongest signal below threshold: {best.strategy}({best.confidence:.2f}) — {best.reasoning}"
+        else:
+            hold_confidence = 0
+            hold_reasoning = "no actionable signals"
+
         return {
             "product_id": product_id,
             "action": Action.HOLD.value,
-            "confidence": 0,
+            "confidence": hold_confidence,
             "signals": [s.to_dict() for s in signals],
-            "reasoning": "no actionable signals above confidence threshold",
+            "reasoning": hold_reasoning,
             "timestamp": int(datetime.now(timezone.utc).timestamp()),
         }

@@ -40,17 +40,17 @@ def social_momentum_signal(product_id: str, tech: dict, sentiment: dict) -> Sign
     ema_21 = tech.get("ema_21", 0)
     ema_score = tech.get("ema_score", 0)
 
-    if has_spike and crowd > 0.2:
-        confidence += 0.4
+    if has_spike and crowd > 0.1:
+        confidence += 0.35
         reasons.append(f"social spike (z={sentiment.get('social_volume_zscore', 0):.1f})")
-    if crowd > 0.3:
+    if crowd > 0.15:
         confidence += 0.2
         reasons.append(f"positive crowd signal ({crowd:.2f})")
     if ema_score > 0:
         confidence += 0.2
         reasons.append("price above key EMAs")
     if tech.get("volume_ratio", 1) > 1.2:
-        confidence += 0.1
+        confidence += 0.15
         reasons.append(f"elevated volume ({tech.get('volume_ratio', 1):.1f}x)")
 
     # Penalize if sentiment is extreme (potential pump)
@@ -81,15 +81,15 @@ def divergence_signal(product_id: str, tech: dict, sentiment: dict) -> Signal:
     rsi_score = tech.get("rsi_score", 0)
 
     # Bullish divergence: sentiment rising but price weak
-    if sentiment_momentum > 0.2 and ema_score < 0:
+    if sentiment_momentum > 0.1 and ema_score < 0:
         confidence += 0.3
         reasons.append(f"bullish divergence: sentiment rising ({sentiment_momentum:.2f}) while price weak")
 
-    if rsi_score > 0.2:  # RSI in oversold territory (bullish)
+    if rsi_score > 0.15:  # RSI in oversold territory (bullish)
         confidence += 0.2
         reasons.append(f"RSI supports reversal (score={rsi_score:.2f})")
 
-    if sentiment.get("crowd_signal", 0) > 0.2:
+    if sentiment.get("crowd_signal", 0) > 0.1:
         confidence += 0.15
         reasons.append("positive crowd signal building")
 
@@ -149,11 +149,11 @@ def mean_reversion_signal(product_id: str, tech: dict, sentiment: dict) -> Signa
     bb_score = tech.get("bb_score", 0)
     sentiment_momentum = sentiment.get("sentiment_momentum", 0)
 
-    if rsi_score > 0.3:  # RSI in oversold territory
+    if rsi_score > 0.2:  # RSI in oversold territory
         confidence += 0.3
         reasons.append(f"oversold RSI ({rsi:.1f})")
 
-    if bb_score > 0.3:  # Near lower Bollinger Band
+    if bb_score > 0.2:  # Near lower Bollinger Band
         confidence += 0.2
         reasons.append(f"near lower Bollinger Band (score={bb_score:.2f})")
 
