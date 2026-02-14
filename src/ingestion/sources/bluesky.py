@@ -94,7 +94,6 @@ class BlueskySource:
             "q": query,
             "limit": min(limit, 100),
             "sort": "latest",
-            "lang": "en",
         }
         if since:
             params["since"] = since
@@ -132,7 +131,7 @@ class BlueskySource:
             }
         """
         search_terms = SYMBOL_SEARCH_TERMS.get(symbol, [symbol.lower()])
-        since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
         seen_uris = set()
         sentiments = []
