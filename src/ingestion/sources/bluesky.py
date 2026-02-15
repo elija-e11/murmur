@@ -83,9 +83,12 @@ class BlueskySource:
         self.session.headers["Authorization"] = f"Bearer {self._access_jwt}"
         logger.debug("Bluesky session refreshed")
 
-    def _search_posts(self, query: str, limit: int = 100,
-                      since: str | None = None) -> list[dict]:
-        """Search Bluesky posts."""
+    def _search_posts(self, query: str, limit: int = 100) -> list[dict]:
+        """Search Bluesky posts (sorted by latest, no server-side time filter).
+
+        The `since` parameter exists in the lexicon but is rejected by the
+        AppView with a 400. Callers must filter by time client-side.
+        """
         elapsed = time.time() - self._last_request
         if elapsed < self._min_interval:
             time.sleep(self._min_interval - elapsed)
@@ -95,8 +98,6 @@ class BlueskySource:
             "limit": min(limit, 100),
             "sort": "latest",
         }
-        if since:
-            params["since"] = since
 
         url = f"{self._base_url}/xrpc/app.bsky.feed.searchPosts"
         resp = self.session.get(url, params=params, timeout=15)
@@ -131,7 +132,7 @@ class BlueskySource:
             }
         """
         search_terms = SYMBOL_SEARCH_TERMS.get(symbol, [symbol.lower()])
-        since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
 
         seen_uris = set()
         sentiments = []
@@ -143,8 +144,17 @@ class BlueskySource:
 
         for term in search_terms:
             try:
-                posts = self._search_posts(term, limit=100, since=since)
+                posts = self._search_posts(term, limit=100)
                 for post in posts:
+                    # Client-side time filter (server doesn't support `since`)
+                    indexed_at = post.get("indexedAt", "")
+                    if indexed_at:
+                        try:
+                            post_time = datetime.fromisoformat(indexed_at.replace("Z", "+00:00"))
+                            if post_time < cutoff:
+                                continue
+                        except ValueError:
+                            pass
                     uri = post.get("uri", "")
                     if uri in seen_uris:
                         continue
