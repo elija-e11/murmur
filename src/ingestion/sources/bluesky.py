@@ -66,28 +66,49 @@ class BlueskySource:
 
     def _refresh_session(self):
         """Refresh an expired access token using the refresh token."""
-        resp = requests.post(
-            f"{self.PDS_URL}/xrpc/com.atproto.server.refreshSession",
-            headers={"Authorization": f"Bearer {self._refresh_jwt}"},
-            timeout=15,
-        )
-        if resp.status_code == 401:
-            # Refresh token also expired — full re-auth
-            logger.warning("Bluesky refresh token expired, re-authenticating")
+        try:
+            resp = requests.post(
+                f"{self.PDS_URL}/xrpc/com.atproto.server.refreshSession",
+                headers={"Authorization": f"Bearer {self._refresh_jwt}"},
+                timeout=15,
+            )
+            if resp.status_code in (400, 401):
+                # Refresh token also expired — full re-auth
+                logger.warning("Bluesky refresh token expired, re-authenticating")
+                self._authenticate()
+                return
+            resp.raise_for_status()
+            data = resp.json()
+            self._access_jwt = data["accessJwt"]
+            self._refresh_jwt = data["refreshJwt"]
+            self.session.headers["Authorization"] = f"Bearer {self._access_jwt}"
+            logger.debug("Bluesky session refreshed")
+        except Exception:
+            # Refresh failed entirely — try full re-auth
+            logger.warning("Bluesky session refresh failed, re-authenticating")
             self._authenticate()
-            return
-        resp.raise_for_status()
-        data = resp.json()
-        self._access_jwt = data["accessJwt"]
-        self._refresh_jwt = data["refreshJwt"]
-        self.session.headers["Authorization"] = f"Bearer {self._access_jwt}"
-        logger.debug("Bluesky session refreshed")
+
+    def _is_token_error(self, resp: requests.Response) -> bool:
+        """Check if a response indicates an expired/invalid token.
+
+        Bluesky returns 400 (not 401) with {"error":"ExpiredToken"} when
+        the access token expires — so we can't rely on status code alone.
+        """
+        if resp.status_code == 401:
+            return True
+        if resp.status_code == 400:
+            try:
+                body = resp.json()
+                return body.get("error") in ("ExpiredToken", "InvalidToken")
+            except Exception:
+                return False
+        return False
 
     def _search_posts(self, query: str, limit: int = 100) -> list[dict]:
         """Search Bluesky posts (sorted by latest, no server-side time filter).
 
         The `since` parameter exists in the lexicon but is rejected by the
-        AppView with a 400. Callers must filter by time client-side.
+        AppView. Callers must filter by time client-side.
         """
         elapsed = time.time() - self._last_request
         if elapsed < self._min_interval:
@@ -103,8 +124,9 @@ class BlueskySource:
         resp = self.session.get(url, params=params, timeout=15)
         self._last_request = time.time()
 
-        # Handle auth expiry — refresh and retry once
-        if resp.status_code == 401 and self._access_jwt:
+        # Handle token expiry — Bluesky returns 400 ExpiredToken, not 401
+        if self._is_token_error(resp) and self._access_jwt:
+            logger.info("Bluesky token expired, refreshing session")
             self._refresh_session()
             resp = self.session.get(url, params=params, timeout=15)
             self._last_request = time.time()
